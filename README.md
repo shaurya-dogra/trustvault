@@ -1,4 +1,7 @@
-# 🔐 TrustVault
+<div align="center">
+  <img src="public/logo.png" alt="TrustVault Logo" width="80" height="80">
+  <h1>TrustVault</h1>
+</div>
 
 > **Milestone contracts with automated verification.** The fair way to work.
 
