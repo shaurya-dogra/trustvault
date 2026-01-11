@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Contract, UserRole } from '../types';
-import { Calendar, FileText, Shield, CheckCircle, Download, Upload, AlertOctagon, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calendar, FileText, Shield, CheckCircle, Download, Upload, AlertOctagon, Loader2, ChevronDown, ChevronUp, ExternalLink, XCircle } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
 import { downloadContract } from '../utils/contractGenerator';
 import { useToast } from '../components/Toast';
@@ -11,6 +12,7 @@ interface ContractDetailsProps {
   contracts: Contract[];
   onDisputeMilestone: (contractId: string, milestoneId: string, data: any) => void;
   onUpdateContract: (id: string, status: Contract['status']) => void;
+  onApproveMilestone?: (contractId: string, milestoneId: string) => void;
   walletAddress: string | null;
   onConnectWallet: () => void;
 }
@@ -19,6 +21,7 @@ export const ContractDetails: React.FC<ContractDetailsProps> = ({
     userRole, 
     contracts, 
     onUpdateContract,
+    onApproveMilestone,
     walletAddress,
     onConnectWallet
 }) => {
@@ -76,9 +79,29 @@ export const ContractDetails: React.FC<ContractDetailsProps> = ({
         }
         setProcessingAction(`fund-${mId}`);
         await new Promise(r => setTimeout(r, 2000));
+        
+        // This is a simulation. In a real app, this would be a blockchain call
+        // then we'd update state. For this prototype, we'll just simulate update via db in App.tsx 
+        // For now, we update via local update logic if we had a specific handler for this.
+        // Since we only have onUpdateContract for the whole contract, we'll assume funded state changes 
+        // are handled via the contract status flow or we'd need a specific milestone updater.
+        // For the demo flow, we'll just show success. 
         addToast("Funds deposited to escrow successfully.", "success");
         setProcessingAction(null);
-        // In a real app, this would update milestone status. For demo, we might just toast.
+    };
+
+    const handleApproveWork = async (mId: string) => {
+        if (!walletAddress) {
+            addToast("Wallet required to release funds.", "warning");
+            onConnectWallet();
+            return;
+        }
+        if (!onApproveMilestone) return;
+
+        setProcessingAction(`approve-${mId}`);
+        await new Promise(r => setTimeout(r, 1500));
+        onApproveMilestone(contract.id, mId);
+        setProcessingAction(null);
     };
 
     return (
@@ -110,7 +133,7 @@ export const ContractDetails: React.FC<ContractDetailsProps> = ({
                         </div>
                     </div>
 
-                    {/* Actions based on Contract Status */}
+                    {/* Actions based on Contract Status: INVITATION (Client -> Freelancer) */}
                     {contract.status === 'invited' && !isClient && (
                         <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
                             <div>
@@ -127,6 +150,25 @@ export const ContractDetails: React.FC<ContractDetailsProps> = ({
                             </div>
                         </div>
                     )}
+
+                    {/* Actions based on Contract Status: PENDING PROPOSAL (Freelancer -> Client) */}
+                    {contract.status === 'pending' && isClient && (
+                        <div className="bg-purple-50 border border-purple-100 rounded-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                            <div>
+                                <h4 className="font-bold text-purple-900">Proposal Received</h4>
+                                <p className="text-sm text-purple-700">Freelancer has proposed this contract. Accept to lock funds and begin.</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={handleModifyProposal} className="px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50">Propose Changes</button>
+                                <button onClick={handleRejectContract} className="px-4 py-2 bg-white border border-red-200 text-red-700 rounded-lg text-sm font-bold hover:bg-red-50">Reject</button>
+                                <button onClick={handleAcceptContract} disabled={!!processingAction} className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-bold hover:bg-slate-800 flex items-center">
+                                    {processingAction === 'accept' ? <Loader2 size={16} className="animate-spin mr-2"/> : null}
+                                    Approve & Fund
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                 </div>
             </div>
 
@@ -144,6 +186,7 @@ export const ContractDetails: React.FC<ContractDetailsProps> = ({
                                 <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center font-bold text-xs ${
                                     milestone.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 
                                     milestone.status === 'active' || milestone.status === 'in_progress' ? 'bg-blue-100 text-blue-700' : 
+                                    milestone.status === 'submitted' ? 'bg-amber-100 text-amber-700' :
                                     'bg-slate-100 text-slate-500'
                                 }`}>
                                     {index + 1}
@@ -168,10 +211,20 @@ export const ContractDetails: React.FC<ContractDetailsProps> = ({
                                         <h5 className="text-xs font-bold text-slate-500 uppercase mb-2">Deliverables</h5>
                                         <ul className="space-y-2">
                                             {milestone.deliverables.map(d => (
-                                                <li key={d.id} className="text-sm text-slate-700 flex items-start">
-                                                    <FileText size={14} className="mt-0.5 mr-2 text-slate-400 flex-shrink-0"/>
-                                                    {d.description}
-                                                    {d.type === 'file' && <span className="ml-2 text-[10px] bg-slate-200 px-1 rounded">FILE</span>}
+                                                <li key={d.id} className="text-sm text-slate-700">
+                                                    <div className="flex items-start">
+                                                        <FileText size={14} className="mt-0.5 mr-2 text-slate-400 flex-shrink-0"/>
+                                                        <span>{d.description}</span>
+                                                        {d.type === 'file' && <span className="ml-2 text-[10px] bg-slate-200 px-1 rounded">FILE</span>}
+                                                    </div>
+                                                    {/* Display Evidence if Submitted */}
+                                                    {d.evidence && (
+                                                        <div className="ml-6 mt-1 flex items-center text-xs bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded w-fit">
+                                                            <CheckCircle size={10} className="mr-1"/> 
+                                                            Submitted: 
+                                                            <a href="#" className="ml-1 underline font-medium truncate max-w-[150px]">{d.evidence}</a>
+                                                        </div>
+                                                    )}
                                                 </li>
                                             ))}
                                         </ul>
@@ -201,14 +254,38 @@ export const ContractDetails: React.FC<ContractDetailsProps> = ({
                                             Fund Escrow
                                         </button>
                                     )}
+                                    
+                                    {/* Client Review Actions */}
+                                    {isClient && milestone.status === 'submitted' && (
+                                        <div className="flex items-center gap-2">
+                                            <div className="text-sm text-slate-500 italic mr-2">Work submitted for review</div>
+                                            <Link to={`/dispute/${contract.id}/${milestone.id}`} className="flex items-center px-3 py-2 border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50">
+                                                <AlertOctagon size={16} className="mr-2"/> Dispute
+                                            </Link>
+                                            <button 
+                                                onClick={() => handleApproveWork(milestone.id)}
+                                                disabled={!!processingAction}
+                                                className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 shadow-sm"
+                                            >
+                                                {processingAction === `approve-${milestone.id}` ? <Loader2 size={16} className="animate-spin mr-2"/> : <CheckCircle size={16} className="mr-2"/>}
+                                                Approve & Release Funds
+                                            </button>
+                                        </div>
+                                    )}
 
-                                    {!isClient && (milestone.status === 'funded' || milestone.status === 'in_progress') && (
+                                    {!isClient && (milestone.status === 'funded' || milestone.status === 'in_progress' || milestone.status === 'active') && (
                                         <button 
-                                            onClick={() => navigate('/submission')}
+                                            onClick={() => navigate(`/submission/${contract.id}/${milestone.id}`)}
                                             className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700"
                                         >
                                             <Upload size={16} className="mr-2"/> Submit Work
                                         </button>
+                                    )}
+                                    
+                                    {!isClient && milestone.status === 'submitted' && (
+                                         <span className="flex items-center text-amber-600 bg-amber-50 px-3 py-2 rounded-lg text-sm font-medium">
+                                             <Loader2 size={16} className="mr-2 animate-spin"/> Waiting for Client Review
+                                         </span>
                                     )}
 
                                     {milestone.status === 'disputed' && (

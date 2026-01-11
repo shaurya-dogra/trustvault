@@ -4,6 +4,7 @@ import { UserRole, UserAccount } from '../types';
 import { ArrowLeft, AlertCircle, CheckCircle2, User, Mail, Lock, UserCheck, Briefcase, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Logo } from '../components/Logo';
+import { db } from '../services/database';
 
 interface AuthPageProps {
   onLogin: (account: UserAccount) => void;
@@ -25,17 +26,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
     setSuccess(null);
   }, [isLogin, view]);
 
-  const getRegisteredUsers = (): UserAccount[] => {
-    const data = localStorage.getItem('trustvault_users');
-    return data ? JSON.parse(data) : [];
-  };
-
-  const saveUser = (user: UserAccount) => {
-    const users = getRegisteredUsers();
-    users.push(user);
-    localStorage.setItem('trustvault_users', JSON.stringify(users));
-  };
-
   const selectRole = (selectedRole: UserRole) => {
     setRole(selectedRole);
     setView('auth');
@@ -46,10 +36,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
     setError(null);
     setSuccess(null);
 
-    const users = getRegisteredUsers();
+    const users = db.getUsers();
 
     if (isLogin) {
       // --- Login Logic ---
+      // Check against DB users (which now includes demo users)
       const registeredUser = users.find(u => 
         u.email.toLowerCase() === email.toLowerCase() && 
         u.password === password && 
@@ -59,14 +50,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
       if (registeredUser) {
         onLogin(registeredUser);
       } else {
-        // Direct Demo logic based on chosen role
-        if (role === 'client' && email.toLowerCase() === 'rajesh@example.com' && password === 'password') {
-          onLogin({ email: 'rajesh@example.com', name: 'Rajesh Gupta', role: 'client', initials: 'RG' });
-        } else if (role === 'freelancer' && email.toLowerCase() === 'ankit@example.com' && password === 'password') {
-          onLogin({ email: 'ankit@example.com', name: 'Ankit Verma', role: 'freelancer', initials: 'AV' });
-        } else {
-          setError(`Invalid credentials for the ${role} portal. Please check your email and password.`);
-        }
+        setError(`Invalid credentials for the ${role} portal. Please check your details.`);
       }
     } else {
       // --- Sign Up Logic ---
@@ -90,9 +74,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
         initials
       };
 
-      saveUser(newUser);
-      setSuccess('Account created! Logging you in...');
-      setTimeout(() => onLogin(newUser), 1000);
+      db.addUser(newUser);
+      setSuccess('Account created! Logging in...');
+      onLogin(newUser); // Login immediately without delay
     }
   };
 
@@ -214,9 +198,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                     <Mail size={18} />
                   </div>
+                  {/* Changed type="email" to type="text" to allow test inputs like "a" */}
                   <input
                     id="email"
-                    type="email"
+                    type="text"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}

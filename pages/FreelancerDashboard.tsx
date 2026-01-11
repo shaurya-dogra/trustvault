@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Contract } from '../types';
-import { Wallet, FileText, CheckCircle, Clock, ChevronRight, Inbox, Edit3, X, Loader2 } from 'lucide-react';
+import { Wallet, FileText, CheckCircle, Clock, ChevronRight, Inbox, Edit3, X, Loader2, ArrowUpRight } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
 import { downloadContract } from '../utils/contractGenerator';
 import { useToast } from '../components/Toast';
@@ -29,6 +30,7 @@ export const FreelancerDashboard: React.FC<FreelancerDashboardProps> = ({
     const activeView = searchParams.get('view') === 'inbox' ? 'inbox' : 'overview';
 
     const [acceptingContractId, setAcceptingContractId] = useState<string | null>(null);
+    const [isWithdrawing, setIsWithdrawing] = useState(false);
 
     // Active: Work is ongoing or completed
     const activeContracts = contracts.filter(c => ['active', 'completed', 'disputed', 'funded'].includes(c.status));
@@ -76,6 +78,24 @@ export const FreelancerDashboard: React.FC<FreelancerDashboardProps> = ({
         navigate('/create-contract', { state: { existingContract: contract } });
     };
 
+    const handleWithdraw = async () => {
+        if (!walletAddress) {
+            addToast("Please connect your wallet to withdraw funds.", "warning");
+            onConnectWallet();
+            return;
+        }
+        if (totalEarnings === 0) {
+            addToast("No earnings available to withdraw.", "info");
+            return;
+        }
+        
+        setIsWithdrawing(true);
+        // Simulate blockchain transaction
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        setIsWithdrawing(false);
+        addToast(`Successfully withdrew ₹${totalEarnings.toLocaleString('en-IN')} to ${walletAddress.substring(0,6)}...`, "success");
+    };
+
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Header */}
@@ -103,7 +123,7 @@ export const FreelancerDashboard: React.FC<FreelancerDashboardProps> = ({
                 <div className="space-y-8">
                     {/* Stats */}
                     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                        <div className="bg-white overflow-hidden shadow-sm rounded-xl border border-slate-200">
+                        <div className="bg-white overflow-hidden shadow-sm rounded-xl border border-slate-200 hover:shadow-md transition-shadow">
                             <div className="p-5">
                                 <div className="flex items-center">
                                     <div className="flex-shrink-0 p-3 bg-emerald-50 rounded-lg">
@@ -116,6 +136,19 @@ export const FreelancerDashboard: React.FC<FreelancerDashboardProps> = ({
                                         </dl>
                                     </div>
                                 </div>
+                            </div>
+                            <div className="bg-slate-50 px-5 py-3 border-t border-slate-100">
+                                <button 
+                                    onClick={handleWithdraw}
+                                    disabled={isWithdrawing || totalEarnings === 0}
+                                    className="text-sm font-medium text-emerald-700 hover:text-emerald-900 flex items-center w-full group disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isWithdrawing ? (
+                                        <>Processing <Loader2 size={14} className="ml-2 animate-spin"/></>
+                                    ) : (
+                                        <>Withdraw Funds <ArrowUpRight size={14} className="ml-auto group-hover:translate-x-1 transition-transform"/></>
+                                    )}
+                                </button>
                             </div>
                         </div>
 

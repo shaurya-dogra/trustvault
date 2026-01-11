@@ -1,8 +1,7 @@
-
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Contract } from '../types';
-import { Plus, Wallet, FileText, AlertCircle, ChevronRight, Clock, LayoutDashboard, Inbox, ExternalLink, X, ArrowUpRight } from 'lucide-react';
+import { Plus, Wallet, FileText, AlertCircle, ChevronRight, Clock, LayoutDashboard, Inbox, ExternalLink, X, ArrowUpRight, Send } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
 import { downloadContract } from '../utils/contractGenerator';
 
@@ -21,8 +20,12 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ contracts, use
   // Filter Active vs Pending for dashboard views
   // Active = Everything NOT pending, invited, rejected, draft
   const activeContracts = contracts.filter(c => !['invited', 'pending', 'rejected', 'draft'].includes(c.status));
-  // Pending = What's in the inbox
-  const pendingProposals = contracts.filter(c => c.status === 'pending'); // Proposals from Freelancers
+  
+  // Pending = Proposals from Freelancers waiting for Client action
+  const pendingProposals = contracts.filter(c => c.status === 'pending'); 
+
+  // Sent Invitations = Contracts created by Client waiting for Freelancer action
+  const sentInvitations = contracts.filter(c => c.status === 'invited');
 
   // Calculate stats based on active contracts
   const totalLocked = activeContracts.reduce((sum, c) => sum + c.escrowBalance, 0);
@@ -36,7 +39,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ contracts, use
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
               <h2 className="text-xl font-bold text-slate-900">
-                  {activeView === 'overview' ? `Welcome back, ${userName.split(' ')[0]}` : 'Proposals & Alerts'}
+                  {activeView === 'overview' ? `Welcome back, ${userName?.split(' ')[0]}` : 'Proposals & Alerts'}
               </h2>
               {activeView === 'overview' && (
                 <p className="text-sm text-slate-500">Here's what's happening with your active contracts.</p>
@@ -180,74 +183,111 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ contracts, use
       )}
 
       {activeView === 'inbox' && (
-           <div className="max-w-4xl mx-auto">
-              {pendingProposals.length === 0 ? (
-                  <div className="text-center py-24 bg-white rounded-xl border border-slate-200 border-dashed">
-                    <div className="mx-auto h-20 w-20 bg-slate-50 rounded-full flex items-center justify-center mb-6">
-                        <Inbox className="h-10 w-10 text-slate-300" />
-                    </div>
-                    <h3 className="text-xl font-bold text-slate-900">No New Proposals</h3>
-                    <p className="mt-2 text-slate-500 max-w-sm mx-auto">You have no pending proposals from freelancers at this time. Why not create a new contract?</p>
-                    <Link 
-                        to="/client-dashboard"
-                        className="mt-6 inline-block text-blue-600 font-bold hover:underline"
-                    >
-                        Return to Dashboard
-                    </Link>
-                 </div>
-              ) : (
-                 <div className="space-y-6">
-                     {pendingProposals.map(contract => (
-                        <div key={contract.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
-                            <div className="p-6">
-                                <div className="flex items-start justify-between mb-4">
-                                    <div>
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 mb-2">
-                                            Action Required
-                                        </span>
-                                        <h4 className="text-xl font-bold text-slate-900">{contract.title}</h4>
-                                        <p className="text-sm text-slate-500 mt-1">Proposed by: <span className="font-semibold text-slate-900">{contract.freelancerName}</span></p>
+           <div className="max-w-4xl mx-auto space-y-10">
+              {/* SECTION 1: Incoming Proposals */}
+              <div>
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center">
+                    <Inbox className="mr-2" size={20}/> Received Proposals ({pendingProposals.length})
+                  </h3>
+                  
+                  {pendingProposals.length === 0 ? (
+                      <div className="bg-white p-8 rounded-xl border border-slate-200 text-center text-slate-500 italic">
+                          No pending proposals from freelancers.
+                      </div>
+                  ) : (
+                     <div className="space-y-6">
+                         {pendingProposals.map(contract => (
+                            <div key={contract.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+                                <div className="p-6">
+                                    <div className="flex items-start justify-between mb-4">
+                                        <div>
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 mb-2">
+                                                Action Required
+                                            </span>
+                                            <h4 className="text-xl font-bold text-slate-900">{contract.title}</h4>
+                                            <p className="text-sm text-slate-500 mt-1">Proposed by: <span className="font-semibold text-slate-900">{contract.freelancerName}</span></p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-xs text-slate-400 uppercase font-semibold">Total Value</p>
+                                            <p className="text-2xl font-bold text-slate-900">₹{contract.totalValue.toLocaleString('en-IN')}</p>
+                                        </div>
                                     </div>
-                                    <div className="text-right">
-                                        <p className="text-xs text-slate-400 uppercase font-semibold">Total Value</p>
-                                        <p className="text-2xl font-bold text-slate-900">₹{contract.totalValue.toLocaleString('en-IN')}</p>
+                                    
+                                    <div className="bg-slate-50 rounded-lg p-4 border border-slate-100 mb-6">
+                                        <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
+                                            <span>Milestones ({contract.milestones.length})</span>
+                                            <span>Submitted: {contract.createdAt}</span>
+                                        </div>
+                                        <ul className="space-y-2">
+                                            {contract.milestones.map((m, i) => (
+                                                <li key={i} className="flex justify-between text-sm text-slate-700 pb-2 border-b border-slate-200 last:border-0 last:pb-0">
+                                                    <span>{i+1}. {m.title}</span>
+                                                    <span className="font-medium">₹{m.amount.toLocaleString('en-IN')}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
                                     </div>
-                                </div>
-                                
-                                <div className="bg-slate-50 rounded-lg p-4 border border-slate-100 mb-6">
-                                    <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
-                                        <span>Milestones ({contract.milestones.length})</span>
-                                        <span>Submitted: {contract.createdAt}</span>
-                                    </div>
-                                    <ul className="space-y-2">
-                                        {contract.milestones.map((m, i) => (
-                                            <li key={i} className="flex justify-between text-sm text-slate-700 pb-2 border-b border-slate-200 last:border-0 last:pb-0">
-                                                <span>{i+1}. {m.title}</span>
-                                                <span className="font-medium">₹{m.amount.toLocaleString('en-IN')}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
 
-                                <div className="flex flex-col sm:flex-row gap-3">
-                                    <button 
-                                        onClick={() => downloadContract(contract)}
-                                        className="flex-1 flex items-center justify-center px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 text-sm font-medium"
-                                    >
-                                        <FileText size={16} className="mr-2"/> Review PDF
-                                    </button>
-                                    <Link 
-                                        to={`/contract/${contract.id}`}
-                                        className="flex-[2] flex items-center justify-center px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 shadow-sm text-sm font-bold"
-                                    >
-                                        Review to Fund or Modify
-                                    </Link>
+                                    <div className="flex flex-col sm:flex-row gap-3">
+                                        <button 
+                                            onClick={() => downloadContract(contract)}
+                                            className="flex-1 flex items-center justify-center px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 text-sm font-medium"
+                                        >
+                                            <FileText size={16} className="mr-2"/> Review PDF
+                                        </button>
+                                        <Link 
+                                            to={`/contract/${contract.id}`}
+                                            className="flex-[2] flex items-center justify-center px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 shadow-sm text-sm font-bold"
+                                        >
+                                            Review to Fund or Modify
+                                        </Link>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                     ))}
-                 </div>
-              )}
+                         ))}
+                     </div>
+                  )}
+              </div>
+
+              {/* SECTION 2: Sent Invitations */}
+              <div>
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center text-slate-500">
+                    <Send className="mr-2" size={20}/> Sent Invitations ({sentInvitations.length})
+                  </h3>
+                  
+                  {sentInvitations.length === 0 ? (
+                      <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 border-dashed text-center text-slate-500 text-sm">
+                          You haven't sent any contract invitations yet.
+                      </div>
+                  ) : (
+                     <div className="space-y-4">
+                         {sentInvitations.map(contract => (
+                            <div key={contract.id} className="bg-white rounded-xl border border-slate-200 p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                <div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <h4 className="font-bold text-slate-800">{contract.title}</h4>
+                                        <StatusBadge status="invited" />
+                                    </div>
+                                    <p className="text-sm text-slate-500">
+                                        Sent to: <span className="font-medium">{contract.freelancerName}</span> • ₹{contract.totalValue.toLocaleString('en-IN')}
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-3 w-full sm:w-auto">
+                                    <Link 
+                                        to={`/contract/${contract.id}`}
+                                        className="text-sm text-blue-600 font-medium hover:underline flex items-center"
+                                    >
+                                        View Details <ArrowUpRight size={14} className="ml-1"/>
+                                    </Link>
+                                    <button className="text-sm text-slate-400 hover:text-red-500 font-medium">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                         ))}
+                     </div>
+                  )}
+              </div>
            </div>
       )}
 

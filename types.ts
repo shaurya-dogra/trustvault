@@ -48,7 +48,9 @@ export interface Contract {
   id: string;
   title: string;
   clientName: string;
+  clientEmail?: string; // Added for precise matching
   freelancerName: string;
+  freelancerEmail?: string; // Added for precise matching
   totalValue: number;
   escrowBalance: number;
   status: 'draft' | 'pending' | 'active' | 'completed' | 'disputed' | 'invited' | 'rejected';

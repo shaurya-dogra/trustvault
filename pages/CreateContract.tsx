@@ -59,8 +59,8 @@ export const CreateContract: React.FC<CreateContractProps> = ({ onAddContract, o
   useEffect(() => {
     if (editingContract) {
       const otherPartyEmail = isClient 
-        ? (editingContract.freelancerName.includes('Ankit') ? 'ankit@example.com' : 'freelancer@example.com')
-        : (editingContract.clientName.includes('Rajesh') ? 'rajesh@example.com' : 'client@example.com');
+        ? (editingContract.freelancerEmail || (editingContract.freelancerName.includes('Ankit') ? 'ankit@example.com' : 'freelancer@example.com'))
+        : (editingContract.clientEmail || (editingContract.clientName.includes('Rajesh') ? 'rajesh@example.com' : 'client@example.com'));
 
       setFormData({
         title: editingContract.title,
@@ -168,15 +168,28 @@ export const CreateContract: React.FC<CreateContractProps> = ({ onAddContract, o
   const getTempContract = (): Contract => {
       const totalValue = milestones.reduce((sum, m) => sum + (Number(m.amount) || 0), 0);
       const counterpartyEmail = formData.counterpartyEmail.toLowerCase();
+      
+      // Determine emails
+      const clientEmail = isClient ? currentUser?.email : counterpartyEmail;
+      const freelancerEmail = isClient ? counterpartyEmail : currentUser?.email;
+
+      // Guess names from emails if not available (Prototype convenience)
+      const myName = currentUser?.name || (isClient ? "Rajesh Gupta" : "Ankit Verma");
       let otherName = counterpartyEmail.split('@')[0];
       if (counterpartyEmail.includes('ankit')) otherName = "Ankit Verma";
       if (counterpartyEmail.includes('rajesh')) otherName = "Rajesh Gupta";
+      if (counterpartyEmail.includes('agency')) otherName = "PixelPerfect Agency";
+
+      const clientName = isClient ? myName : otherName;
+      const freelancerName = isClient ? otherName : myName;
       
       return {
           id: editingContract ? editingContract.id : `CNT-2024-DRAFT`,
           title: formData.title,
-          clientName: isClient ? (currentUser?.name || "Rajesh Gupta") : otherName,
-          freelancerName: isClient ? otherName : (currentUser?.name || "Ankit Verma"),
+          clientName: clientName,
+          clientEmail: clientEmail,
+          freelancerName: freelancerName,
+          freelancerEmail: freelancerEmail,
           totalValue: totalValue,
           escrowBalance: 0,
           status: 'draft',
@@ -218,9 +231,9 @@ export const CreateContract: React.FC<CreateContractProps> = ({ onAddContract, o
     setFinalizeProgress(85);
     await new Promise(r => setTimeout(r, 1000));
     
-    // LOGIC FIX: 
-    // If Client creates -> 'invited' (Not active yet, no funds locked yet).
-    // If Freelancer creates -> 'pending' (Waiting for client to fund).
+    // Logic:
+    // If Client creates -> 'invited' (Waiting for Freelancer).
+    // If Freelancer creates -> 'pending' (Waiting for Client).
     const finalStatus = isClient ? 'invited' : 'pending';
 
     const finalContract: Contract = {

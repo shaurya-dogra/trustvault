@@ -12,8 +12,8 @@ import { ContractDetails } from './pages/ContractDetails';
 import { MilestoneSubmission } from './pages/MilestoneSubmission';
 import { DisputeReport } from './pages/DisputeReport';
 import { ProfilePage } from './pages/ProfilePage';
-import { MOCK_CONTRACTS } from './mockData';
 import { ToastProvider, useToast } from './components/Toast';
+import { db } from './services/database';
 
 // AppContent contains the main logic and consumes the Toast Context
 const AppContent: React.FC = () => {
@@ -21,33 +21,18 @@ const AppContent: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   
-  // Safe access to toast context
   const { addToast } = useToast();
   
-  // Initialize contracts from localStorage or use defaults
-  // VERSION BUMP: v3 to ensure new sample data is loaded
-  const [contracts, setContracts] = useState<Contract[]>(() => {
-    const saved = localStorage.getItem('trustvault_contracts_v3');
-    return saved ? JSON.parse(saved) : MOCK_CONTRACTS;
-  });
-
-  // Sync contracts to localStorage
-  useEffect(() => {
-    localStorage.setItem('trustvault_contracts_v3', JSON.stringify(contracts));
-  }, [contracts]);
+  // Initialize contracts from Database Service
+  const [contracts, setContracts] = useState<Contract[]>(db.getAllContracts());
 
   // Check for existing session and wallet listener
   useEffect(() => {
-    // Restore Session
-    const savedSession = localStorage.getItem('trustvault_session');
-    if (savedSession) {
-        try {
-            const session: AuthSession = JSON.parse(savedSession);
-            setUserRole(session.role);
-            setCurrentUser(session.user);
-        } catch (e) {
-            console.error("Failed to restore session", e);
-        }
+    // Restore Session from DB
+    const session = db.getSession();
+    if (session) {
+        setUserRole(session.role);
+        setCurrentUser(session.user);
     }
 
     // Wallet Provider Setup (Listener only)
@@ -84,15 +69,14 @@ const AppContent: React.FC = () => {
   const handleLogin = (account: UserAccount) => {
     setUserRole(account.role);
     setCurrentUser(account);
-    const session: AuthSession = { user: account, role: account.role };
-    localStorage.setItem('trustvault_session', JSON.stringify(session));
+    db.saveSession({ user: account, role: account.role });
   };
 
   const handleLogout = () => {
     setUserRole(null);
     setCurrentUser(null);
     setWalletAddress(null);
-    localStorage.removeItem('trustvault_session');
+    db.clearSession();
     addToast("Logged out successfully.", "success");
   };
 
@@ -129,57 +113,116 @@ const AppContent: React.FC = () => {
   };
 
   const handleAddContract = (newContract: Contract) => {
-    setContracts(prev => [newContract, ...prev]);
+    db.addContract(newContract);
+    setContracts(db.getAllContracts()); // Refresh state from DB
   };
 
   // Used for status updates (Accept/Reject/Active)
   const handleUpdateContractStatus = (id: string, status: Contract['status']) => {
-    setContracts(prev => prev.map(c => {
-        if (c.id === id) {
-            // If activating, assume funds are now locked (demo logic)
-            const escrowBalance = status === 'active' ? c.totalValue : c.escrowBalance;
-            return { ...c, status, escrowBalance };
-        }
-        return c;
-    }));
+    const contract = contracts.find(c => c.id === id);
+    if (contract) {
+        const escrowBalance = status === 'active' ? contract.totalValue : contract.escrowBalance;
+        const updated = { ...contract, status, escrowBalance };
+        db.updateContract(updated);
+        setContracts(db.getAllContracts());
+    }
   };
 
   // Used for full edits (Modify Proposal)
   const handleEditContract = (updatedContract: Contract) => {
-    setContracts(prev => prev.map(c => c.id === updatedContract.id ? updatedContract : c));
+    db.updateContract(updatedContract);
+    setContracts(db.getAllContracts());
+  };
+
+  // Handle Freelancer submitting work
+  const handleSubmitWork = (contractId: string, milestoneId: string, evidenceData: Record<string, string>) => {
+    const contract = contracts.find(c => c.id === contractId);
+    if (!contract) return;
+
+    const updatedMilestones = contract.milestones.map(m => {
+        if (m.id !== milestoneId) return m;
+
+        // Update deliverables with evidence
+        const updatedDeliverables = m.deliverables.map(d => ({
+            ...d,
+            evidence: evidenceData[d.id] || d.evidence,
+            verificationStatus: 'pending' as const // Reset verification
+        }));
+
+        return {
+            ...m,
+            status: 'submitted' as const, // Update status to submitted
+            deliverables: updatedDeliverables
+        };
+    });
+
+    const updatedContract = { ...contract, milestones: updatedMilestones } as Contract;
+    db.updateContract(updatedContract);
+    setContracts(db.getAllContracts());
+    addToast("Work submitted successfully for Client review.", "success");
+  };
+
+  // Handle Client approving work (Release Funds)
+  const handleApproveMilestone = (contractId: string, milestoneId: string) => {
+      const contract = contracts.find(c => c.id === contractId);
+      if (!contract) return;
+
+      const milestone = contract.milestones.find(m => m.id === milestoneId);
+      if (!milestone) return;
+
+      const updatedMilestones = contract.milestones.map(m => {
+          if (m.id !== milestoneId) return m;
+          return { ...m, status: 'paid' as const };
+      });
+
+      // Deduct from escrow
+      const newEscrowBalance = Math.max(0, contract.escrowBalance - milestone.amount);
+      
+      // Check if all milestones are complete
+      const allComplete = updatedMilestones.every(m => m.status === 'paid' || m.status === 'completed');
+      const newContractStatus = allComplete ? 'completed' as const : contract.status;
+
+      const updatedContract = { 
+          ...contract, 
+          escrowBalance: newEscrowBalance,
+          milestones: updatedMilestones,
+          status: newContractStatus
+      };
+
+      db.updateContract(updatedContract);
+      setContracts(db.getAllContracts());
+      addToast(`Funds released for ${milestone.title}.`, "success");
   };
 
   const handleDisputeMilestone = (contractId: string, milestoneId: string, disputeData: { reason: string; comments: string; failedCriteria: string[] }) => {
-    setContracts(prev => prev.map(c => {
-      if (c.id !== contractId) return c;
-      
-      const updatedMilestones = c.milestones.map(m => {
-        if (m.id !== milestoneId) return m;
-        return {
-          ...m,
-          status: 'disputed',
-          disputeReason: disputeData.reason as any,
-          disputeComments: disputeData.comments,
-          failedCriteria: disputeData.failedCriteria,
-          disputeLevel: 1, // Start at Level 1 (AI Analysis)
-          disputeRaisedAt: new Date().toLocaleDateString('en-IN')
-        } as any;
-      });
-
-      return {
-        ...c,
-        status: 'disputed',
-        milestones: updatedMilestones
-      };
-    }));
+      const contract = contracts.find(c => c.id === contractId);
+      if (contract) {
+          const updatedMilestones = contract.milestones.map(m => {
+            if (m.id !== milestoneId) return m;
+            return {
+              ...m,
+              status: 'disputed',
+              disputeReason: disputeData.reason as any,
+              disputeComments: disputeData.comments,
+              failedCriteria: disputeData.failedCriteria,
+              disputeLevel: 1, 
+              disputeRaisedAt: new Date().toLocaleDateString('en-IN')
+            } as any;
+          });
+          
+          const updatedContract = { ...contract, status: 'disputed', milestones: updatedMilestones } as Contract;
+          db.updateContract(updatedContract);
+          setContracts(db.getAllContracts());
+      }
   };
 
+  // Filtering contracts based on current user email for robustness
   const clientContracts = contracts
-    .filter(c => c.clientName === currentUser?.name)
-    .sort((a, b) => b.id.localeCompare(a.id));
+    .filter(c => (c.clientEmail && c.clientEmail === currentUser?.email) || (!c.clientEmail && c.clientName === currentUser?.name))
+    .sort((a, b) => b.id.localeCompare(a.id)); 
     
   const freelancerContracts = contracts
-    .filter(c => c.freelancerName === currentUser?.name)
+    .filter(c => (c.freelancerEmail && c.freelancerEmail === currentUser?.email) || (!c.freelancerEmail && c.freelancerName === currentUser?.name))
     .sort((a, b) => b.id.localeCompare(a.id));
 
   return (
@@ -225,11 +268,13 @@ const AppContent: React.FC = () => {
           : <Navigate to="/login" />
         } />
         
-        <Route path="/submission" element={
+        <Route path="/submission/:contractId/:milestoneId" element={
           userRole === 'freelancer' ? 
           <MilestoneSubmission 
             walletAddress={walletAddress}
             onConnectWallet={handleConnectWallet}
+            contracts={contracts}
+            onSubmitWork={handleSubmitWork}
           /> : <Navigate to="/login" />
         } />
 
@@ -240,6 +285,7 @@ const AppContent: React.FC = () => {
                 contracts={contracts} 
                 onDisputeMilestone={handleDisputeMilestone}
                 onUpdateContract={handleUpdateContractStatus}
+                onApproveMilestone={handleApproveMilestone}
                 walletAddress={walletAddress}
                 onConnectWallet={handleConnectWallet}
             /> : <Navigate to="/login" />
